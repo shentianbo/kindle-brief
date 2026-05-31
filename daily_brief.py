@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 import requests
 import feedparser
 from PIL import Image, ImageDraw, ImageFont
-from config import CHAPTERS, SYSTEM_PROMPT, ARTICLE_PROMPT, DEEPSEEK_MODEL
+from config import CHAPTERS, SYSTEM_PROMPT, ARTICLE_PROMPT_REGULAR, ARTICLE_PROMPT_PSYCH, DEEPSEEK_MODEL
 
 # ── 环境变量 ──────────────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
@@ -141,9 +141,9 @@ def summarize_chapter(chapter_title: str, articles: list[dict], is_psych: bool =
     for i, a in enumerate(articles, 1):
         raw_block += f"\n[{i}] 来源：{a['source']}\n标题：{a['title']}\n链接：{a['link']}\n内容：{a['text']}\n"
 
-    prompt = ARTICLE_PROMPT.format(
+    template = ARTICLE_PROMPT_PSYCH if is_psych else ARTICLE_PROMPT_REGULAR
+    prompt = template.format(
         chapter_title=chapter_title,
-        is_psych="是" if is_psych else "否",
         raw_block=raw_block,
     )
 
