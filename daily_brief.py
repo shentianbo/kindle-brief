@@ -160,7 +160,7 @@ def summarize_chapter(chapter_cfg: dict, articles: list[dict]) -> str:
         raw_block = ""
         idx = 1
         for ss_name, ss_articles in sections.items():
-            raw_block += f"\n【{ss_name}】\n"
+            raw_block += f"\n=== {ss_name} ===\n"   # 用 === 而非 【】，避免 md_to_html 误判为文章标题
             for a in ss_articles:
                 raw_block += (
                     f"\n[{idx}] 来源：{a['source']}\n"
@@ -189,7 +189,7 @@ def summarize_chapter(chapter_cfg: dict, articles: list[dict]) -> str:
     else:
         prompt = f"请总结以下文章内容：\n{raw_block}"
 
-    max_tokens = 4000 if chapter_type == "psych" else 2800
+    max_tokens = 4000 if chapter_type == "psych" else 4500
     return call_deepseek(prompt, max_tokens=max_tokens)
 
 
@@ -464,7 +464,8 @@ _LABEL_RE = re.compile(
 
 
 def _inline(t: str) -> str:
-    """行内 Markdown → HTML（粗体、斜体）"""
+    """行内 Markdown → HTML（先转义特殊字符，再处理粗体、斜体）"""
+    t = html.escape(t)                                       # & < > → &amp; &lt; &gt;
     t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
     t = re.sub(r'\*(.+?)\*',     r'<em>\1</em>',         t)
     return t
