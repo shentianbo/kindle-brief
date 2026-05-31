@@ -43,3 +43,5 @@ jobs:
           name: error-log-${{ github.run_id }}
           path: "*.log"
           retention-days: 7
+
+# updated
