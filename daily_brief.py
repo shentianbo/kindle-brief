@@ -285,64 +285,88 @@ def make_cover(chapter_names: list[str], article_count: int) -> bytes:
 
 CHAPTER_CSS = """
 body {
-  font-family: Georgia, "Noto Serif SC", serif;
+  font-family: Georgia, serif;
   font-size: 1em;
-  line-height: 1.9;
+  line-height: 1.85;
   margin: 0;
-  padding: 1.5em;
-  color: #111;
+  padding: 1em 1.4em;
+  color: #000;
   background: #fff;
 }
+/* ── 章节标题 ── */
 h1.chapter-title {
-  font-size: 1.3em;
+  font-size: 1.15em;
   font-weight: bold;
-  border-bottom: 2px solid #111;
-  padding-bottom: 0.4em;
-  margin-bottom: 1.5em;
+  letter-spacing: 0.04em;
+  border-bottom: 3px solid #000;
+  padding-bottom: 0.45em;
+  margin: 0 0 1.8em 0;
 }
-.article { margin-bottom: 2.5em; padding-bottom: 2em; border-bottom: 1px solid #ccc; }
-.article:last-child { border-bottom: none; }
-.source {
-  font-size: 0.7em;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: #777;
-  margin-bottom: 0.3em;
-}
-.art-title { font-size: 1.1em; font-weight: bold; line-height: 1.4; margin-bottom: 0.5em; }
-.one-line { font-size: 0.85em; color: #444; margin-bottom: 1em; }
-.one-line::before { content: "一句话  "; color: #999; font-size: 0.8em; }
-.key-points {
-  background: #f5f5f0;
-  border-left: 3px solid #111;
+h2 { font-size: 1em; font-weight: bold; margin: 1em 0 0.3em 0; }
+h3 { font-size: 0.95em; font-weight: bold; margin: 0.8em 0 0.2em 0; }
+/* ── 文章卡片 ── */
+.article {
+  margin: 0 0 0.4em 0;
   padding: 0.8em 1em;
-  margin-bottom: 1em;
+  border: 1px solid #bbb;
 }
-.key-points .label, .why .label, .concept .label, .think .label {
-  font-size: 0.68em;
-  letter-spacing: 0.15em;
+/* ── 文章标题行 ── */
+.art-title {
+  font-size: 1.04em;
+  font-weight: bold;
+  line-height: 1.5;
+  padding-left: 0.6em;
+  border-left: 4px solid #000;
+  margin-bottom: 0.55em;
+}
+.art-note {
+  font-weight: normal;
+  font-size: 0.84em;
+}
+/* ── 分节标签（一句话 / 关键信息 / 竞争意义 …） ── */
+.section-label {
+  font-size: 0.6em;
+  font-weight: bold;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #888;
-  margin-bottom: 0.4em;
+  color: #555;
+  border-bottom: 1px solid #ddd;
+  margin: 0.85em 0 0.2em 0;
+  padding-bottom: 0.1em;
 }
-.key-points ul { margin: 0; padding-left: 1.2em; }
-.key-points li { font-size: 0.85em; line-height: 1.7; margin: 0.15em 0; }
-.why p { font-size: 0.9em; line-height: 1.85; color: #333; margin: 0.3em 0; }
-.concept {
-  border: 1px solid #ddd;
-  padding: 1em 1.1em;
-  margin: 1em 0;
-  background: #fafaf8;
+/* ── 一句话 ── */
+.one-line-block {
+  font-size: 0.9em;
+  font-style: italic;
+  margin: 0 0 0.2em 0;
 }
-.concept p { font-size: 0.88em; line-height: 1.85; color: #333; margin: 0.4em 0; }
-.think {
-  border-left: 3px solid #666;
-  padding: 0.7em 1em;
-  margin-top: 1em;
-  background: #f5f5f0;
+/* ── 正文内容 ── */
+.section-content {
+  font-size: 0.88em;
+  line-height: 1.82;
+  margin: 0.15em 0;
 }
-.think p { font-size: 0.86em; line-height: 1.85; color: #333; margin: 0.3em 0; }
-hr.section-sep { border: none; border-top: 2px solid #444; margin: 2.5em 0; }
+/* ── GitHub star 行 ── */
+.star-line {
+  font-size: 0.78em;
+  margin: 0.2em 0 0.4em 0;
+}
+/* ── 列表 ── */
+ul { margin: 0.2em 0 0.3em 0; padding-left: 1.3em; }
+li { font-size: 0.86em; line-height: 1.75; margin: 0.1em 0; }
+p  { font-size: 0.9em; line-height: 1.85; margin: 0.25em 0; }
+/* ── 文章间虚线分隔 ── */
+hr.art-sep {
+  border: none;
+  border-top: 1px dashed #aaa;
+  margin: 1.6em 0;
+}
+/* ── AI章节子板块粗分隔 ── */
+hr.section-sep {
+  border: none;
+  border-top: 2px solid #000;
+  margin: 2.4em 0;
+}
 """
 
 COVER_CSS = """
@@ -425,48 +449,136 @@ def make_insight_html(insight_text: str) -> str:
 </body></html>"""
 
 
+# ── 结构化 Markdown 解析器 ────────────────────────────────────
+
+# 所有需要渲染为"分节标签"的关键词
+_LABELS = frozenset({
+    "一句话", "关键信息", "竞争意义", "值得关注",
+    "是什么", "能做什么",
+    "背景理论", "核心展开", "延伸维度", "延伸思考",
+    "表层", "中层", "深层",
+})
+_LABEL_RE = re.compile(
+    r'^(' + '|'.join(re.escape(l) for l in _LABELS) + r')[：:]\s*(.*)',
+)
+
+
+def _inline(t: str) -> str:
+    """行内 Markdown → HTML（粗体、斜体）"""
+    t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+    t = re.sub(r'\*(.+?)\*',     r'<em>\1</em>',         t)
+    return t
+
+
 def md_to_html(text: str) -> str:
-    """把DeepSeek可能返回的Markdown简单转成HTML"""
-    # AI章节子板块分隔线 ═══ → <hr>
-    text = re.sub(r'^═{3,}$', '<hr class="section-sep"/>', text, flags=re.MULTILINE)
-    # 标题
-    text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
-    text = re.sub(r'^## (.+)$',  r'<h2>\1</h2>', text, flags=re.MULTILINE)
-    text = re.sub(r'^# (.+)$',   r'<h2>\1</h2>', text, flags=re.MULTILINE)
-    # 粗体
-    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-    # 斜体
-    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
-    # 无序列表（连续的·或-开头行）
-    lines = text.split('\n')
-    out, in_list = [], False
+    """结构感知解析器：把 DeepSeek 输出转为分层 HTML。
+
+    识别：
+      【标题】     → .art-title（同时开启 .article 卡片）
+      一句话：     → .section-label + .one-line-block
+      关键信息 等  → .section-label + .section-content / <ul>
+      ⭐ …        → .star-line
+      · - * 列表  → <ul><li>
+      ---          → <hr class="art-sep">（同时关闭当前卡片）
+      ═══          → <hr class="section-sep">（AI 子板块分隔）
+    """
+    lines  = text.split('\n')
+    out    = []
+    in_art = False   # 是否在 .article 卡片内
+    in_ul  = False   # 是否在 <ul> 内
+
+    def close_ul():
+        nonlocal in_ul
+        if in_ul:
+            out.append('</ul>')
+            in_ul = False
+
+    def close_art():
+        nonlocal in_art
+        if in_art:
+            close_ul()
+            out.append('</div>')
+            in_art = False
+
+    def open_art():
+        nonlocal in_art
+        out.append('<div class="article">')
+        in_art = True
+
     for line in lines:
-        stripped = line.strip()
-        if re.match(r'^[·\-\*] ', stripped):
-            if not in_list:
-                out.append('<ul>')
-                in_list = True
-            out.append(f'<li>{stripped[2:]}</li>')
-        else:
-            if in_list:
-                out.append('</ul>')
-                in_list = False
-            out.append(line)
-    if in_list:
-        out.append('</ul>')
-    text = '\n'.join(out)
-    # 空行转段落
-    paragraphs = re.split(r'\n{2,}', text)
-    result = []
-    for p in paragraphs:
-        p = p.strip()
-        if not p:
+        s = line.strip()
+
+        # 空行
+        if not s:
+            close_ul()
             continue
-        if p.startswith('<h') or p.startswith('<ul') or p.startswith('<li'):
-            result.append(p)
-        else:
-            result.append(f'<p>{p}</p>')
-    return '\n'.join(result)
+
+        # 文章分隔符 ---
+        if re.match(r'^-{3,}$', s):
+            close_art()
+            out.append('<hr class="art-sep"/>')
+            continue
+
+        # AI 子板块分隔 ═══
+        if re.match(r'^═{3,}$', s):
+            close_art()
+            out.append('<hr class="section-sep"/>')
+            continue
+
+        # 文章标题 【...】
+        m = re.match(r'^【(.+?)】(.*)', s)
+        if m:
+            close_art()
+            open_art()
+            title = _inline(m.group(1))
+            note  = _inline(m.group(2).strip())
+            inner = f'【{title}】'
+            if note:
+                inner += f'<span class="art-note"> {note}</span>'
+            out.append(f'<div class="art-title">{inner}</div>')
+            continue
+
+        # ⭐ star 行
+        if s.startswith('⭐'):
+            close_ul()
+            out.append(f'<div class="star-line">{_inline(s)}</div>')
+            continue
+
+        # 分节标签：一句话：xxx / 关键信息：
+        lm = _LABEL_RE.match(s)
+        if lm:
+            close_ul()
+            label   = lm.group(1)
+            content = lm.group(2).strip()
+            out.append(f'<div class="section-label">{label}</div>')
+            if content:
+                cls = "one-line-block" if label == "一句话" else "section-content"
+                out.append(f'<div class="{cls}">{_inline(content)}</div>')
+            continue
+
+        # 项目符号 · - *
+        if re.match(r'^[·\-\*] ', s):
+            if not in_ul:
+                out.append('<ul>')
+                in_ul = True
+            out.append(f'<li>{_inline(s[2:])}</li>')
+            continue
+
+        close_ul()
+
+        # Markdown 标题
+        if s.startswith('### '):
+            out.append(f'<h3>{_inline(s[4:])}</h3>')
+            continue
+        if s.startswith('## '):
+            out.append(f'<h2>{_inline(s[3:])}</h2>')
+            continue
+
+        # 默认段落
+        out.append(f'<p>{_inline(s)}</p>')
+
+    close_art()
+    return '\n'.join(out)
 
 
 # ═══════════════════════════════════════════════════════════════
