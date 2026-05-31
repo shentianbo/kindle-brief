@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 import requests
 import feedparser
 from PIL import Image, ImageDraw, ImageFont
-from config import CHAPTERS, SYSTEM_PROMPT, ARTICLE_PROMPT_REGULAR, ARTICLE_PROMPT_PSYCH, DEEPSEEK_MODEL
+from config import CHAPTERS, SYSTEM_PROMPT, ARTICLE_PROMPT_MM, ARTICLE_PROMPT_AI, ARTICLE_PROMPT_PSYCH, DEEPSEEK_MODEL
 
 # ── 环境变量 ──────────────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
@@ -54,19 +54,28 @@ def fetch_full_text(url: str) -> str:
 
 def fetch_chapter(chapter_cfg: dict) -> list[dict]:
     """抓取单个章节的所有文章"""
-    articles = []
+    articles    = []
     max_per_feed = chapter_cfg.get("max_per_feed", 4)
     use_fulltext = chapter_cfg.get("use_fulltext", False)
+    keywords     = chapter_cfg.get("keywords", [])   # 心理学章节关键词过滤
 
     for feed_cfg in chapter_cfg["feeds"]:
+        subsection = feed_cfg.get("subsection", "")
         try:
             feed = feedparser.parse(feed_cfg["url"])
             count = 0
             for entry in feed.entries:
                 if count >= max_per_feed:
                     break
+                title   = clean_html(entry.title)[:150]
                 summary = clean_html(getattr(entry, "summary", "") or "")
                 link    = getattr(entry, "link", "")
+
+                # 关键词过滤：仅保留匹配的文章
+                if keywords:
+                    haystack = (title + " " + summary).lower()
+                    if not any(kw.lower() in haystack for kw in keywords):
+                        continue
 
                 # 心理学章节尝试抓全文
                 fulltext = ""
@@ -78,11 +87,12 @@ def fetch_chapter(chapter_cfg: dict) -> list[dict]:
                     continue
 
                 articles.append({
-                    "source":  feed_cfg["name"],
-                    "title":   clean_html(entry.title)[:150],
-                    "link":    link,
-                    "text":    text[:3500],
-                    "chapter": chapter_cfg["title"],
+                    "source":     feed_cfg["name"],
+                    "title":      title,
+                    "link":       link,
+                    "text":       text[:3500],
+                    "chapter":    chapter_cfg["title"],
+                    "subsection": subsection,
                 })
                 count += 1
 
@@ -132,22 +142,54 @@ def call_deepseek(prompt: str, max_tokens: int = 3000) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-def summarize_chapter(chapter_title: str, articles: list[dict], is_psych: bool = False) -> str:
-    """对单章节文章做总结，返回HTML片段"""
+def summarize_chapter(chapter_cfg: dict, articles: list[dict]) -> str:
+    """对单章节文章做总结，返回 Markdown 内容"""
+    chapter_title = chapter_cfg["title"]
+    chapter_type  = chapter_cfg.get("chapter_type", "regular")
+
     if not articles:
-        return "<p><em>今日暂无相关内容。</em></p>"
+        return "*今日暂无相关内容。*"
 
-    raw_block = ""
-    for i, a in enumerate(articles, 1):
-        raw_block += f"\n[{i}] 来源：{a['source']}\n标题：{a['title']}\n链接：{a['link']}\n内容：{a['text']}\n"
+    # ── 构建 raw_block ──────────────────────────────────────
+    if chapter_type == "ai":
+        # AI 章节按子板块分组，方便 DeepSeek 区分处理
+        sections: dict[str, list] = {}
+        for a in articles:
+            ss = a.get("subsection") or "其他"
+            sections.setdefault(ss, []).append(a)
+        raw_block = ""
+        idx = 1
+        for ss_name, ss_articles in sections.items():
+            raw_block += f"\n【{ss_name}】\n"
+            for a in ss_articles:
+                raw_block += (
+                    f"\n[{idx}] 来源：{a['source']}\n"
+                    f"标题：{a['title']}\n"
+                    f"链接：{a['link']}\n"
+                    f"内容：{a['text']}\n"
+                )
+                idx += 1
+    else:
+        raw_block = ""
+        for i, a in enumerate(articles, 1):
+            raw_block += (
+                f"\n[{i}] 来源：{a['source']}\n"
+                f"标题：{a['title']}\n"
+                f"链接：{a['link']}\n"
+                f"内容：{a['text']}\n"
+            )
 
-    template = ARTICLE_PROMPT_PSYCH if is_psych else ARTICLE_PROMPT_REGULAR
-    prompt = template.format(
-        chapter_title=chapter_title,
-        raw_block=raw_block,
-    )
+    # ── 选择 Prompt ─────────────────────────────────────────
+    if chapter_type == "mm":
+        prompt = ARTICLE_PROMPT_MM.format(raw_block=raw_block)
+    elif chapter_type == "ai":
+        prompt = ARTICLE_PROMPT_AI.format(raw_block=raw_block)
+    elif chapter_type == "psych":
+        prompt = ARTICLE_PROMPT_PSYCH.format(chapter_title=chapter_title, raw_block=raw_block)
+    else:
+        prompt = f"请总结以下文章内容：\n{raw_block}"
 
-    max_tokens = 4000 if is_psych else 2500
+    max_tokens = 4000 if chapter_type == "psych" else 2800
     return call_deepseek(prompt, max_tokens=max_tokens)
 
 
@@ -180,9 +222,13 @@ def make_cover(chapter_names: list[str], article_count: int) -> bytes:
     img  = Image.new("L", (W, H), color=10)   # 近黑背景
     draw = ImageDraw.Draw(img)
 
-    # 尝试加载系统字体，失败则用默认
+    # 优先加载支持中文的 CJK 字体，回退到拉丁字体
     def load_font(size):
         for path in [
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",       # Ubuntu: fonts-wqy-zenhei
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
             "/System/Library/Fonts/Times.ttc",
@@ -296,6 +342,7 @@ h1.chapter-title {
   background: #f5f5f0;
 }
 .think p { font-size: 0.86em; line-height: 1.85; color: #333; margin: 0.3em 0; }
+hr.section-sep { border: none; border-top: 2px solid #444; margin: 2.5em 0; }
 """
 
 COVER_CSS = """
@@ -380,6 +427,8 @@ def make_insight_html(insight_text: str) -> str:
 
 def md_to_html(text: str) -> str:
     """把DeepSeek可能返回的Markdown简单转成HTML"""
+    # AI章节子板块分隔线 ═══ → <hr>
+    text = re.sub(r'^═{3,}$', '<hr class="section-sep"/>', text, flags=re.MULTILINE)
     # 标题
     text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
     text = re.sub(r'^## (.+)$',  r'<h2>\1</h2>', text, flags=re.MULTILINE)
@@ -590,10 +639,9 @@ def main():
     summaries = {}
     for ch in CHAPTERS:
         title    = ch["title"]
-        is_psych = ch.get("is_psych", False)
         articles = all_articles.get(title, [])
         print(f"\n[总结] {title} ({len(articles)} 条)...")
-        summaries[title] = summarize_chapter(title, articles, is_psych=is_psych)
+        summaries[title] = summarize_chapter(ch, articles)
 
     # 3. 跨章洞察
     print("\n[洞察] 生成今日洞察...")

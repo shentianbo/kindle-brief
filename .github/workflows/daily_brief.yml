@@ -25,6 +25,9 @@ jobs:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
+      - name: Install CJK fonts
+        run: sudo apt-get install -y fonts-wqy-zenhei
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
