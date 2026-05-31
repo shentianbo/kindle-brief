@@ -12,7 +12,6 @@ from email.mime.multipart import MIMEMultipart
 import requests
 import feedparser
 from PIL import Image, ImageDraw, ImageFont
-from ebooklib import epub
 from config import CHAPTERS, SYSTEM_PROMPT, ARTICLE_PROMPT, DEEPSEEK_MODEL
 
 # ── 环境变量 ──────────────────────────────────────────────────
